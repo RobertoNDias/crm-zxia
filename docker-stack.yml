@@ -1,0 +1,105 @@
+version: "3.8"
+
+networks:
+  net-xzia:
+    external: true
+
+volumes:
+  mysql-data:
+    driver: local
+  redis-data:
+    driver: local
+
+services:
+  backend:
+    image: produtosdigitaisrd/crm-zxia-backend:dev
+    environment:
+      - NODE_ENV=production
+      - PORT=8080
+      - BACKEND_URL=https://apicrm.xzia.com.br
+      - FRONTEND_URL=https://crm.xzia.com.br
+      - DISABLE_WHATSAPP=true
+      - SKIP_WHATSAPP_SESSIONS=true
+      - REDIS_URI=redis://redis:6379
+      - DB_DIALECT=mysql
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_NAME=whaticket
+      - DB_USER=whaticket
+      - DB_PASS=changeme
+      - ENV_TOKEN=prod-token
+      - MASTER_KEY=disable
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+      update_config:
+        order: start-first
+        parallelism: 1
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=net-xzia"
+        - "traefik.http.routers.apicrm.rule=Host(`apicrm.xzia.com.br`)"
+        - "traefik.http.routers.apicrm.entrypoints=websecure"
+        - "traefik.http.routers.apicrm.tls=true"
+        - "traefik.http.services.apicrm.loadbalancer.server.port=8080"
+    networks:
+      - net-xzia
+    depends_on:
+      - mysql
+      - redis
+
+  frontend:
+    image: produtosdigitaisrd/crm-zxia-frontend:dev
+    environment:
+      - BACKEND_URL=https://apicrm.xzia.com.br
+      - BRAND_NAME=Whaticket
+      - BRAND_SHORT_NAME=Whaticket
+      - BRAND_THEME_COLOR=#0f7aea
+      - BRAND_BACKGROUND_COLOR=#ffffff
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+      update_config:
+        order: start-first
+        parallelism: 1
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=net-xzia"
+        - "traefik.http.routers.crm.rule=Host(`crm.xzia.com.br`)"
+        - "traefik.http.routers.crm.entrypoints=websecure"
+        - "traefik.http.routers.crm.tls=true"
+        - "traefik.http.services.crm.loadbalancer.server.port=80"
+    networks:
+      - net-xzia
+    depends_on:
+      - backend
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      - MYSQL_ROOT_PASSWORD=changeme-root
+      - MYSQL_DATABASE=whaticket
+      - MYSQL_USER=whaticket
+      - MYSQL_PASSWORD=changeme
+    volumes:
+      - mysql-data:/var/lib/mysql
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+    networks:
+      - net-xzia
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "20", "1", "--loglevel", "warning"]
+    volumes:
+      - redis-data:/data
+    deploy:
+      replicas: 1
+    networks:
+      - net-xzia
